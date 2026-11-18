@@ -196,52 +196,84 @@ pub fn run_task(
         .file
         .task(name)
         .ok_or_else(|| RunError::Invalid(format!("no task `{name}`")))?;
+    let stack = enter(stack, name)?;
+    let scope = task_scope(context, name, task, calls);
+    run_deps(context, task, &scope, calls, &stack)?;
+    let prepared = prepare(context, name, task, &scope)?;
+    let place = Place {
+        name,
+        label: &prepared.label,
+        dir: &prepared.dir,
+        env: &prepared.env,
+    };
+    run_commands(context, task, &scope, &place, calls, &stack)
+}
+
+/// The chain of tasks with one more, refusing a task that is in it already.
+fn enter(stack: &[String], name: &str) -> Result<Vec<String>, RunError> {
+    let mut chain = stack.to_vec();
+    chain.push(name.to_owned());
     if stack.iter().any(|known| known == name) {
-        let mut chain = stack.to_vec();
-        chain.push(name.to_owned());
         return Err(RunError::Invalid(format!(
             "a loop of tasks: {}",
             chain.join(" -> ")
         )));
     }
-    let mut stack = stack.to_vec();
-    stack.push(name.to_owned());
+    Ok(chain)
+}
 
-    let scope = task_scope(context, name, task, calls);
-    run_deps(context, task, &scope, calls, &stack)?;
-    check_requires(name, task, &scope)?;
-    let dir = task_dir(context, task, &scope)?;
-    let env = environment(context, task, &scope)?;
-    check_preconditions(name, task, &scope, &dir, &env)?;
-    let label = task
-        .label
-        .as_deref()
-        .map_or_else(|| Ok(name.to_owned()), |label| render(label, &scope))
-        .map_err(RunError::Invalid)?;
-    let place = Place {
-        name,
-        label: &label,
-        dir: &dir,
-        env: &env,
+/// The directory, the environment and the label the commands of a task run
+/// with.
+struct Prepared {
+    dir: PathBuf,
+    env: Vec<(String, String)>,
+    label: String,
+}
+
+/// Checks what a task needs before its commands, and gives what they run
+/// with.
+fn prepare(
+    context: &Context<'_>,
+    name: &str,
+    task: &Task,
+    scope: &TaskScope<'_>,
+) -> Result<Prepared, RunError> {
+    check_requires(name, task, scope)?;
+    let dir = task_dir(context, task, scope)?;
+    let env = environment(context, task, scope)?;
+    check_preconditions(name, task, scope, &dir, &env)?;
+    let label = match task.label.as_deref() {
+        Some(label) => render(label, scope).map_err(RunError::Invalid)?,
+        None => name.to_owned(),
     };
+    Ok(Prepared { dir, env, label })
+}
+
+/// Runs the commands of a task in order.
+fn run_commands(
+    context: &Context<'_>,
+    task: &Task,
+    scope: &TaskScope<'_>,
+    place: &Place<'_>,
+    calls: &[&[(String, Variable)]],
+    stack: &[String],
+) -> Result<(), RunError> {
     for command in &task.cmds {
         match command {
             Command::Shell {
                 cmd,
                 silent,
                 ignore_error,
-            } => {
-                run_shell(
-                    context,
-                    task,
-                    &scope,
-                    &place,
-                    cmd,
-                    *silent || task.silent,
-                    *ignore_error,
-                )?;
-            }
-            Command::Call(call) => run_call(context, call, &scope, calls, &stack)?,
+            } => run_shell(
+                context,
+                task,
+                scope,
+                place,
+                cmd,
+                *silent || task.silent,
+                *ignore_error,
+            )?,
+            Command::Call(call) => run_call(context, call, scope, calls, stack)?,
         }
     }
     Ok(())
