@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Progmasoft <support@progmasoft.com>
+# SPDX-License-Identifier: EPL-2.0
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/outil",
+    "crates/outil-core",
+    "crates/outil-fyaml-rs",
+    "crates/outil-fyaml-sys",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "EPL-2.0"
+repository = "https://github.com/Progmasoft/outil"
+publish = false
+
+[workspace.dependencies]
+json5 = "=1.3.7"
+# Only for json5, which reads through Serde.
+serde = "=1.0.229"
+thiserror = "=2.0.21"
+outil-core = { path = "crates/outil-core" }
+outil-fyaml-rs = { path = "crates/outil-fyaml-rs" }
+outil-fyaml-sys = { path = "crates/outil-fyaml-sys" }
+
+[workspace.lints.rust]
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
