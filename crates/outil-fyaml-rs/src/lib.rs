@@ -231,8 +231,8 @@ const MAX_DEPTH: usize = 256;
 ///
 /// `node` is a node of a live document.
 unsafe fn copy(node: *mut sys::fy_node, depth: usize) -> Result<Node, Error> {
-    // SAFETY: the caller's node is alive; every pointer taken from it belongs
-    // to the same document and is read before the document goes.
+    // SAFETY: the caller's node is alive; each helper reads it and the nodes
+    // under it while the document is.
     unsafe {
         let mark = mark_of(node);
         if depth > MAX_DEPTH {
@@ -242,62 +242,93 @@ unsafe fn copy(node: *mut sys::fy_node, depth: usize) -> Result<Node, Error> {
             });
         }
         match sys::fy_node_get_type(node) {
-            sys::fy_node_type::FYNT_SCALAR => {
-                let mut length = 0;
-                let text = sys::fy_node_get_scalar(node, &raw mut length);
-                let text = text_of(text, length);
-                let style = sys::fy_node_get_style(node);
-                if style == sys::fy_node_style::FYNS_ALIAS {
-                    return Ok(Node::Alias { name: text, mark });
-                }
-                let mut tag_length = 0;
-                let tag = sys::fy_node_get_tag(node, &raw mut tag_length);
-                let tag = (!tag.is_null()).then(|| text_of(tag, tag_length));
-                Ok(Node::Scalar {
-                    text,
-                    style: style_of(style),
-                    tag,
-                    mark,
-                })
-            }
-            sys::fy_node_type::FYNT_SEQUENCE => {
-                let mut items = Vec::new();
-                let mut iterator: *mut c_void = ptr::null_mut();
-                loop {
-                    let item = sys::fy_node_sequence_iterate(node, &raw mut iterator);
-                    if item.is_null() {
-                        break;
-                    }
-                    items.push(copy(item, depth + 1)?);
-                }
-                Ok(Node::Sequence { items, mark })
-            }
-            sys::fy_node_type::FYNT_MAPPING => {
-                let mut pairs = Vec::new();
-                let mut iterator: *mut c_void = ptr::null_mut();
-                loop {
-                    let pair = sys::fy_node_mapping_iterate(node, &raw mut iterator);
-                    if pair.is_null() {
-                        break;
-                    }
-                    let key = sys::fy_node_pair_key(pair);
-                    let value = sys::fy_node_pair_value(pair);
-                    let key = if key.is_null() {
-                        null_scalar(mark)
-                    } else {
-                        copy(key, depth + 1)?
-                    };
-                    let value = if value.is_null() {
-                        null_scalar(mark)
-                    } else {
-                        copy(value, depth + 1)?
-                    };
-                    pairs.push((key, value));
-                }
-                Ok(Node::Mapping { pairs, mark })
-            }
+            sys::fy_node_type::FYNT_SCALAR => Ok(copy_scalar(node, mark)),
+            sys::fy_node_type::FYNT_SEQUENCE => copy_sequence(node, mark, depth),
+            sys::fy_node_type::FYNT_MAPPING => copy_mapping(node, mark, depth),
         }
     }
+}
+
+/// Copies a scalar, or an alias, which libfyaml keeps as a scalar.
+///
+/// # Safety
+///
+/// `node` is a scalar of a live document.
+unsafe fn copy_scalar(node: *mut sys::fy_node, mark: Mark) -> Node {
+    // SAFETY: the node is alive; its text and tag are copied before it goes.
+    unsafe {
+        let mut length = 0;
+        let text = text_of(sys::fy_node_get_scalar(node, &raw mut length), length);
+        let style = sys::fy_node_get_style(node);
+        if style == sys::fy_node_style::FYNS_ALIAS {
+            return Node::Alias { name: text, mark };
+        }
+        let mut tag_length = 0;
+        let tag = sys::fy_node_get_tag(node, &raw mut tag_length);
+        let tag = (!tag.is_null()).then(|| text_of(tag, tag_length));
+        Node::Scalar {
+            text,
+            style: style_of(style),
+            tag,
+            mark,
+        }
+    }
+}
+
+/// Copies a sequence and its items.
+///
+/// # Safety
+///
+/// `node` is a sequence of a live document.
+unsafe fn copy_sequence(node: *mut sys::fy_node, mark: Mark, depth: usize) -> Result<Node, Error> {
+    let mut items = Vec::new();
+    let mut iterator: *mut c_void = ptr::null_mut();
+    loop {
+        // SAFETY: the node is alive; the iterator is libfyaml's own state.
+        let item = unsafe { sys::fy_node_sequence_iterate(node, &raw mut iterator) };
+        if item.is_null() {
+            break;
+        }
+        // SAFETY: the item belongs to the same live document.
+        items.push(unsafe { copy(item, depth + 1) }?);
+    }
+    Ok(Node::Sequence { items, mark })
+}
+
+/// Copies one side of a pair: a missing key or value is null.
+///
+/// # Safety
+///
+/// `node` is null or a node of a live document.
+unsafe fn copy_side(node: *mut sys::fy_node, mark: Mark, depth: usize) -> Result<Node, Error> {
+    if node.is_null() {
+        return Ok(null_scalar(mark));
+    }
+    // SAFETY: the caller's node is alive.
+    unsafe { copy(node, depth + 1) }
+}
+
+/// Copies a mapping and its pairs, duplicates included.
+///
+/// # Safety
+///
+/// `node` is a mapping of a live document.
+unsafe fn copy_mapping(node: *mut sys::fy_node, mark: Mark, depth: usize) -> Result<Node, Error> {
+    let mut pairs = Vec::new();
+    let mut iterator: *mut c_void = ptr::null_mut();
+    loop {
+        // SAFETY: the node is alive; the iterator is libfyaml's own state.
+        let pair = unsafe { sys::fy_node_mapping_iterate(node, &raw mut iterator) };
+        if pair.is_null() {
+            break;
+        }
+        // SAFETY: the pair, its key and its value belong to the same document.
+        let (key, value) = unsafe { (sys::fy_node_pair_key(pair), sys::fy_node_pair_value(pair)) };
+        // SAFETY: as above.
+        let entry = unsafe { (copy_side(key, mark, depth)?, copy_side(value, mark, depth)?) };
+        pairs.push(entry);
+    }
+    Ok(Node::Mapping { pairs, mark })
 }
 
 /// An empty plain scalar, which YAML reads as null.
