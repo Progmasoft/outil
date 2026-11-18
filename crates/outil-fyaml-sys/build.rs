@@ -41,6 +41,12 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_arg(format!("-I{}", source.join("include").display()))
+        .clang_arg("-std=gnu11")
+        // The bindings need the types and the declarations, not the bodies of
+        // the atomic helpers; without this, bindgen depends on the
+        // <stdatomic.h> of whatever libclang it finds, and some lack C11's.
+        // The library itself is built by CMake with its own atomics.
+        .clang_arg("-D__STDC_NO_ATOMICS__=1")
         .allowlist_function("fy_.*")
         .allowlist_type("fy_.*")
         .allowlist_var("FY.*")
