@@ -30,6 +30,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # outil-fyaml-sys builds libfyaml with CMake and binds it with bindgen,
+      # which needs libclang.
+      - name: Install CMake and libclang
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends cmake libclang-dev
       # rust-toolchain.toml names the toolchain; rustup installs it.
       - name: Test
         run: cargo test --workspace --locked
@@ -42,6 +49,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install CMake and libclang
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends cmake libclang-dev
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy

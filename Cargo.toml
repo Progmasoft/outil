@@ -24,8 +24,8 @@ json5 = "=1.3.7"
 serde = "=1.0.229"
 thiserror = "=2.0.21"
 outil-core = { path = "crates/outil-core" }
-outil-fyaml-rs = { path = "crates/outil-fyaml-rs" }
-outil-fyaml-sys = { path = "crates/outil-fyaml-sys" }
+outil-fyaml-rs = { path = "crates/outil-fyaml-rs", version = "0.1.0", registry = "progmasoft" }
+outil-fyaml-sys = { path = "crates/outil-fyaml-sys", version = "0.1.0", registry = "progmasoft" }
 
 [workspace.lints.rust]
 missing_docs = "deny"

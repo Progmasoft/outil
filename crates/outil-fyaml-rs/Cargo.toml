@@ -9,10 +9,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+publish = ["progmasoft"]
 
 [dependencies]
 outil-fyaml-sys.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

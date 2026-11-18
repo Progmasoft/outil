@@ -40,7 +40,8 @@ pub struct Invocation {
 pub const HELP: &str = "\
 Usage: outil [options] [task...] [NAME=value...] [-- arguments...]
 
-Runs the tasks of Outil.json5, or the task `default` when none is named.
+Runs the tasks of Outil.json5 or Outil.yml, or the task `default` when none
+is named.
 
 Options:
   -l, --list             List the tasks that have a description

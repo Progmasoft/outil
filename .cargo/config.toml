@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Progmasoft <support@progmasoft.com>
+# SPDX-License-Identifier: EPL-2.0
+
+# Progmasoft's Cargo registry, which outil-fyaml-sys and outil-fyaml-rs are
+# published to.
+[registries.progmasoft]
+index = "sparse+https://rustreg.progmasoft.com/index/"
