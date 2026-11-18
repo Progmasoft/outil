@@ -11,6 +11,9 @@ mod cli;
 use std::io::Write;
 
 use cli::Action;
+use std::path::PathBuf;
+
+use outil_core::model::File;
 use outil_core::run::RunError;
 
 fn main() {
@@ -22,13 +25,9 @@ fn main() {
 ///
 /// The result is the exit code; messages go to standard error.
 fn main_with(arguments: &[String]) -> i32 {
-    let mut stderr = std::io::stderr();
     let invocation = match cli::parse(arguments) {
         Ok(invocation) => invocation,
-        Err(error) => {
-            let _ = writeln!(stderr, "outil: {error}");
-            return 2;
-        }
+        Err(error) => return fail(&error, 2),
     };
     match invocation.action {
         Action::Help => {
@@ -48,22 +47,29 @@ fn main_with(arguments: &[String]) -> i32 {
         .map_or_else(|| working_dir.clone(), |dir| working_dir.join(dir));
     let loaded = outil_core::find_file(&start)
         .and_then(|path| outil_core::load(&path).map(|file| (path, file)));
-    let (path, file) = match loaded {
-        Ok(found) => found,
-        Err(error) => {
-            let _ = writeln!(stderr, "outil: {error}");
-            return 1;
-        }
-    };
+    match loaded {
+        Ok((path, file)) => act(&invocation, &file, path, working_dir),
+        Err(error) => fail(&error, 1),
+    }
+}
+
+/// Writes a message to standard error and returns an exit code.
+fn fail(message: &dyn std::fmt::Display, code: i32) -> i32 {
+    // A closed standard error changes nothing about the exit code.
+    let _ = writeln!(std::io::stderr(), "outil: {message}");
+    code
+}
+
+/// Lists, summarizes or runs, once the file is read.
+fn act(invocation: &cli::Invocation, file: &File, path: PathBuf, working_dir: PathBuf) -> i32 {
     match &invocation.action {
         Action::List => {
-            print!("{}", outil_core::listing(&file));
+            print!("{}", outil_core::listing(file));
             0
         }
         Action::Summary(name) => {
             let Some((_, task)) = file.task(name) else {
-                let _ = writeln!(stderr, "outil: no task `{name}`");
-                return 1;
+                return fail(&format!("no task `{name}`"), 1);
             };
             println!(
                 "{}",
@@ -75,7 +81,7 @@ fn main_with(arguments: &[String]) -> i32 {
             0
         }
         _ => match outil_core::run_tasks(
-            &file,
+            file,
             path,
             &invocation.tasks,
             &invocation.options,
@@ -83,11 +89,11 @@ fn main_with(arguments: &[String]) -> i32 {
         ) {
             Ok(()) => 0,
             Err(error) => {
-                let _ = writeln!(stderr, "outil: {error}");
-                match error {
+                let code = match error {
                     RunError::Failed { code, .. } => code,
                     RunError::Invalid(_) => 1,
-                }
+                };
+                fail(&error, code)
             }
         },
     }

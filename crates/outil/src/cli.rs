@@ -107,6 +107,27 @@ fn set_flag(invocation: &mut Invocation, flag: Flag) {
     invocation.options.set(flag);
 }
 
+/// The flags of the command line: their short name, their long name, and
+/// what they set.
+const FLAGS: [(&str, &str, Flag); 4] = [
+    ("-f", "--force", Flag::Force),
+    ("-s", "--silent", Flag::Silent),
+    ("-v", "--verbose", Flag::Verbose),
+    ("", "--offline", Flag::Offline),
+];
+
+/// The options that are an action and take no value.
+const ACTIONS: [(&str, &str, Action); 3] = [
+    ("-l", "--list", Action::List),
+    ("-h", "--help", Action::Help),
+    ("", "--version", Action::Version),
+];
+
+/// Whether an argument is an option by its short or its long name.
+fn names(argument: &str, short: &str, long: &str) -> bool {
+    argument == long || (!short.is_empty() && argument == short)
+}
+
 /// Reads one option; returns the index of the next argument.
 fn option(
     invocation: &mut Invocation,
@@ -114,32 +135,30 @@ fn option(
     arguments: &[String],
     index: usize,
 ) -> Result<usize, String> {
-    let value = |name: &str| {
-        arguments
-            .get(index)
-            .cloned()
-            .ok_or_else(|| format!("{name} needs a value"))
-    };
+    if let Some((_, _, flag)) = FLAGS
+        .iter()
+        .find(|(short, long, _)| names(argument, short, long))
+    {
+        set_flag(invocation, *flag);
+        return Ok(index);
+    }
+    if let Some((_, _, action)) = ACTIONS
+        .iter()
+        .find(|(short, long, _)| names(argument, short, long))
+    {
+        set_action(invocation, action.clone())?;
+        return Ok(index);
+    }
+    let value = arguments
+        .get(index)
+        .cloned()
+        .ok_or_else(|| format!("{argument} needs a value"));
     match argument {
-        "-l" | "--list" => set_action(invocation, Action::List)?,
-        "--summary" => {
-            let task = value("--summary")?;
-            set_action(invocation, Action::Summary(task))?;
-            return Ok(index + 1);
-        }
-        "-d" | "--dir" => {
-            invocation.dir = Some(PathBuf::from(value(argument)?));
-            return Ok(index + 1);
-        }
-        "-f" | "--force" => set_flag(invocation, Flag::Force),
-        "-s" | "--silent" => set_flag(invocation, Flag::Silent),
-        "-v" | "--verbose" => set_flag(invocation, Flag::Verbose),
-        "--offline" => set_flag(invocation, Flag::Offline),
-        "-h" | "--help" => set_action(invocation, Action::Help)?,
-        "--version" => set_action(invocation, Action::Version)?,
+        "--summary" => set_action(invocation, Action::Summary(value?))?,
+        "-d" | "--dir" => invocation.dir = Some(PathBuf::from(value?)),
         _ => return Err(format!("no option {argument}; outil --help lists them")),
     }
-    Ok(index)
+    Ok(index + 1)
 }
 
 #[cfg(test)]

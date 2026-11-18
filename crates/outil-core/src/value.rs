@@ -232,65 +232,76 @@ fn offset_of(text: &str, line: usize, column: usize) -> usize {
     text.len()
 }
 
+/// Where a comment that starts at an offset ends, or `None` when no comment
+/// starts there.
+fn comment_end(text: &str, index: usize) -> Option<usize> {
+    let rest = &text[index..];
+    if rest.starts_with("//") {
+        return Some(rest.find('\n').map_or(text.len(), |end| index + end));
+    }
+    if let Some(body) = rest.strip_prefix("/*") {
+        return Some(body.find("*/").map_or(text.len(), |end| index + end + 4));
+    }
+    None
+}
+
+/// Where a string that starts at an offset, at its quote, ends: one past
+/// its closing quote.
+fn string_end(bytes: &[u8], index: usize) -> usize {
+    let quote = bytes[index];
+    let mut end = index + 1;
+    while end < bytes.len() && bytes[end] != quote {
+        end += if bytes[end] == b'\\' { 2 } else { 1 };
+    }
+    (end + 1).min(bytes.len())
+}
+
+/// Whether a byte may be part of a bare JSON5 key.
+fn is_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$'
+}
+
 /// The lines, from 0, on which an object that starts at an offset has a key.
 fn key_lines(text: &str, object: usize, key: &str) -> Vec<usize> {
     let bytes = text.as_bytes();
     let (mut index, mut depth, mut lines) = (object, 0usize, Vec::new());
     let line_at = |offset: usize| text[..offset].matches('\n').count();
     while index < bytes.len() {
-        match bytes[index] {
-            b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                index = text[index..]
-                    .find('\n')
-                    .map_or(bytes.len(), |end| index + end);
+        if let Some(end) = comment_end(text, index) {
+            index = end;
+            continue;
+        }
+        // A key is a string or a name at the first level, followed by `:`.
+        let start = index;
+        let (end, content) = match bytes[index] {
+            b'"' | b'\'' => {
+                let end = string_end(bytes, index);
+                (end, &text[start + 1..end.saturating_sub(1).max(start + 1)])
             }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                index = text[index + 2..]
-                    .find("*/")
-                    .map_or(bytes.len(), |end| index + end + 4);
+            byte if is_name_byte(byte) && !byte.is_ascii_digit() => {
+                let length = bytes[index..]
+                    .iter()
+                    .take_while(|&&byte| is_name_byte(byte))
+                    .count();
+                (index + length, &text[start..index + length])
             }
-            quote @ (b'"' | b'\'') => {
-                let start = index;
-                index += 1;
-                while index < bytes.len() && bytes[index] != quote {
-                    index += if bytes[index] == b'\\' { 2 } else { 1 };
-                }
-                index += 1;
-                let content = &text[start + 1..(index - 1).min(text.len())];
-                if depth == 1 && content == key && is_key_end(text, index) {
-                    lines.push(line_at(start));
-                }
-                continue;
+            b'{' | b'[' => {
+                depth += 1;
+                (index + 1, "")
             }
-            b'{' | b'[' => depth += 1,
             b'}' | b']' => {
                 depth -= 1;
                 if depth == 0 {
                     break;
                 }
+                (index + 1, "")
             }
-            character
-                if depth == 1
-                    && (character.is_ascii_alphabetic()
-                        || character == b'_'
-                        || character == b'$') =>
-            {
-                let start = index;
-                while index < bytes.len()
-                    && (bytes[index].is_ascii_alphanumeric()
-                        || bytes[index] == b'_'
-                        || bytes[index] == b'$')
-                {
-                    index += 1;
-                }
-                if &text[start..index] == key && is_key_end(text, index) {
-                    lines.push(line_at(start));
-                }
-                continue;
-            }
-            _ => {}
+            _ => (index + 1, ""),
+        };
+        if depth == 1 && !content.is_empty() && content == key && is_key_end(text, end) {
+            lines.push(line_at(start));
         }
-        index += 1;
+        index = end;
     }
     lines
 }

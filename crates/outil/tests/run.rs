@@ -15,7 +15,8 @@ struct Project {
 impl Project {
     fn new(json5: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let dir = std::env::temp_dir().join(format!(
+        // Cargo's directory for the files of integration tests, inside target/.
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
             "outil-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -47,7 +48,7 @@ fn run_in(dir: &Path, arguments: &[&str]) -> Output {
 impl Drop for Project {
     fn drop(&mut self) {
         // Only the directory this test made.
-        if self.dir.starts_with(std::env::temp_dir()) {
+        if self.dir.starts_with(env!("CARGO_TARGET_TMPDIR")) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
     }

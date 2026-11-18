@@ -218,6 +218,12 @@ pub fn run_task(
         .as_deref()
         .map_or_else(|| Ok(name.to_owned()), |label| render(label, &scope))
         .map_err(RunError::Invalid)?;
+    let place = Place {
+        name,
+        label: &label,
+        dir: &dir,
+        env: &env,
+    };
     for command in &task.cmds {
         match command {
             Command::Shell {
@@ -225,23 +231,50 @@ pub fn run_task(
                 silent,
                 ignore_error,
             } => {
-                let cmd = render(cmd, &scope)
-                    .map_err(|error| RunError::Invalid(format!("task `{name}`: {error}")))?;
-                let quiet = *silent
-                    || task.silent
-                    || context.file.silent
-                    || context.options.has(Flag::Silent);
-                let code = execute(&label, &cmd, quiet, &dir, &env)?;
-                if code != 0 && !ignore_error && !task.ignore_error {
-                    return Err(RunError::Failed {
-                        task: label,
-                        command: cmd,
-                        code,
-                    });
-                }
+                run_shell(
+                    context,
+                    task,
+                    &scope,
+                    &place,
+                    cmd,
+                    *silent || task.silent,
+                    *ignore_error,
+                )?;
             }
             Command::Call(call) => run_call(context, call, &scope, calls, &stack)?,
         }
+    }
+    Ok(())
+}
+
+/// Where the commands of a task run.
+struct Place<'a> {
+    name: &'a str,
+    label: &'a str,
+    dir: &'a Path,
+    env: &'a [(String, String)],
+}
+
+/// Runs one command of a task, and stops the task when it fails.
+fn run_shell(
+    context: &Context<'_>,
+    task: &Task,
+    scope: &TaskScope<'_>,
+    place: &Place<'_>,
+    cmd: &str,
+    silent: bool,
+    ignore_error: bool,
+) -> Result<(), RunError> {
+    let cmd = render(cmd, scope)
+        .map_err(|error| RunError::Invalid(format!("task `{}`: {error}", place.name)))?;
+    let quiet = silent || context.file.silent || context.options.has(Flag::Silent);
+    let code = execute(place.label, &cmd, quiet, place.dir, place.env)?;
+    if code != 0 && !ignore_error && !task.ignore_error {
+        return Err(RunError::Failed {
+            task: place.label.to_owned(),
+            command: cmd,
+            code,
+        });
     }
     Ok(())
 }
