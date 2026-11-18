@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: EPL-2.0
 
 //! Running tasks: their dependencies at the same time, then their commands
-//! in order, each through the shell.
+//! in order, each through the shell: `cmd.exe` on Windows, `sh` elsewhere.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -123,7 +123,27 @@ fn render_value(value: &Value, scope: &dyn Scope) -> Result<Value, String> {
     })
 }
 
-/// The shell of the commands.
+/// The name of the shell, for messages.
+const SHELL: &str = if cfg!(windows) { "cmd.exe" } else { "sh" };
+
+/// The shell of the commands: `cmd.exe /C` on Windows, `sh -c` elsewhere.
+#[cfg(windows)]
+fn shell(command: &str) -> Process {
+    use std::os::windows::process::CommandExt;
+
+    let mut process = Process::new("cmd.exe");
+    // cmd.exe reads its command line itself; the command goes to it as
+    // written, without the quoting of other programs' arguments.
+    process
+        .arg("/D")
+        .arg("/S")
+        .arg("/C")
+        .raw_arg(format!("\"{command}\""));
+    process
+}
+
+/// The shell of the commands: `cmd.exe /C` on Windows, `sh -c` elsewhere.
+#[cfg(not(windows))]
 fn shell(command: &str) -> Process {
     let mut process = Process::new("sh");
     process.arg("-c").arg(command);
@@ -137,7 +157,7 @@ fn capture(command: &str, dir: &Path) -> Result<Value, String> {
         .stdin(Stdio::null())
         .stderr(Stdio::inherit())
         .output()
-        .map_err(|error| format!("cannot start sh: {error}"))?;
+        .map_err(|error| format!("cannot start {SHELL}: {error}"))?;
     if !output.status.success() {
         return Err(format!("`{command}` failed"));
     }
@@ -392,7 +412,7 @@ fn check_preconditions(
             .envs(env.iter().map(|(key, value)| (key, value)))
             .stdout(Stdio::null())
             .status()
-            .map_err(|error| RunError::Invalid(format!("cannot start sh: {error}")))?;
+            .map_err(|error| RunError::Invalid(format!("cannot start {SHELL}: {error}")))?;
         if !status.success() {
             let message = match &precondition.msg {
                 Some(msg) => render(msg, scope).map_err(RunError::Invalid)?,
@@ -422,7 +442,10 @@ fn execute(
         .envs(env.iter().map(|(key, value)| (key, value)))
         .status()
         .map_err(|error| {
-            RunError::Invalid(format!("cannot start sh in {}: {error}", dir.display()))
+            RunError::Invalid(format!(
+                "cannot start {SHELL} in {}: {error}",
+                dir.display()
+            ))
         })?;
     // A command stopped by a signal has no code; it counts as 1.
     Ok(status.code().unwrap_or(1))

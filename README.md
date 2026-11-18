@@ -21,9 +21,9 @@ The repository is a Cargo workspace of four crates:
 | `outil-fyaml-rs` | a safe layer over `outil-fyaml-sys`, for reading `Outil.yml` |
 
 Outil reads `Outil.json5` and runs its tasks: their dependencies at the same time, then their commands in order
-through `sh`, with `vars`, `env`, `requires`, `preconditions`, task calls, aliases, internal tasks and `${{ }}`
-templates. A key of the format that this version does not carry out yet, such as `srcs` or `includes`, is refused by
-name, so that nothing is skipped without a word. `Outil.yml` and the two libfyaml crates come next.
+through the shell, `cmd.exe` on Windows and `sh` elsewhere, with `vars`, `env`, `requires`, `preconditions`, task
+calls, aliases, internal tasks and `${{ }}` templates. A key of the format that this version does not carry out yet,
+such as `srcs` or `includes`, is refused by name, so that nothing is skipped without a word. `Outil.yml` and the two libfyaml crates come next.
 
 ```sh
 cargo test --workspace
