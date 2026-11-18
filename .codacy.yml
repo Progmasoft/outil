@@ -1,0 +1,9 @@
+---
+# SPDX-FileCopyrightText: 2026 Progmasoft <support@progmasoft.com>
+# SPDX-License-Identifier: EPL-2.0
+
+# libfyaml is third-party source, vendored as released (MIT); its findings
+# belong upstream, pantoniou/libfyaml.
+exclude_paths:
+  - 'target/**'
+  - 'crates/outil-fyaml-sys/libfyaml/**'

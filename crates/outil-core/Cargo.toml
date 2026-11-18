@@ -13,6 +13,7 @@ publish.workspace = true
 
 [dependencies]
 json5.workspace = true
+outil-fyaml-rs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

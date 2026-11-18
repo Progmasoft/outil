@@ -4,12 +4,20 @@
 [package]
 name = "outil-fyaml-sys"
 description = "The C API of libfyaml for Outil, built from source and bound by bindgen"
+links = "fyaml"
+build = "build.rs"
+# The crate holds libfyaml (MIT) beside its own code (EPL-2.0).
+include = ["/Cargo.toml", "/build.rs", "/wrapper.h", "/src/**", "/libfyaml/**", "/LICENSE-libfyaml"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license = "EPL-2.0 AND MIT"
 repository.workspace = true
-publish.workspace = true
+publish = ["progmasoft"]
+
+[build-dependencies]
+bindgen = "=0.73.2"
+cmake = "=0.1.58"
 
 [lints]
 workspace = true

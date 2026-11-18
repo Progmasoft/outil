@@ -14,6 +14,14 @@ struct Project {
 
 impl Project {
     fn new(json5: &str) -> Self {
+        Self::with_file("Outil.json5", json5)
+    }
+
+    fn yaml(text: &str) -> Self {
+        Self::with_file("Outil.yml", text)
+    }
+
+    fn with_file(name: &str, text: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         // Cargo's directory for the files of integration tests, inside target/.
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
@@ -22,7 +30,7 @@ impl Project {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("Outil.json5"), json5).unwrap();
+        std::fs::write(dir.join(name), text).unwrap();
         Project { dir }
     }
 
@@ -239,5 +247,55 @@ fn passes_arguments_flags_and_environment() {
     assert_eq!(
         stdout(&project.run(&["show", "-s", "--force", "--", "a", "b"])),
         "file-show task a b true true\n"
+    );
+}
+
+#[test]
+fn runs_the_yaml_example_of_the_format() {
+    let project = Project::yaml(
+        "vars:\n  BUILD_DIR: build\n\ntasks:\n  default:\n    deps: [build]\n\n  build:\n    desc: Compile the program\n    cmds:\n      - mkdir -p ${{ BUILD_DIR }}\n      - echo built > ${{ BUILD_DIR }}/app\n",
+    );
+    let output = project.run(&["-s"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        std::fs::read_to_string(project.path("build/app")).unwrap(),
+        "built\n"
+    );
+    assert_eq!(
+        stdout(&project.run(&["--list"])),
+        "* build  Compile the program\n"
+    );
+}
+
+#[test]
+fn yaml_and_json5_describe_the_same_model() {
+    let json5 = Project::new(
+        r#"{ vars: { N: 8, ON: true, NAME: "x" }, tasks: { show: { cmds: ["echo ${{ N }} ${{ ON }} ${{ NAME }}"] } } }"#,
+    );
+    let yaml = Project::yaml(
+        "vars:\n  N: 8\n  ON: true\n  NAME: x\ntasks:\n  show:\n    cmds:\n      - echo ${{ N }} ${{ ON }} ${{ NAME }}\n",
+    );
+    assert_eq!(stdout(&json5.run(&["show", "-s"])), "8 true x\n");
+    assert_eq!(stdout(&yaml.run(&["show", "-s"])), "8 true x\n");
+}
+
+#[test]
+fn reports_yaml_errors_with_their_lines() {
+    let twice = Project::yaml("tasks:\n  a: echo 1\n  a: echo 2\n");
+    assert!(
+        stderr(&twice.run(&["a"]))
+            .contains("the key `a` is written twice in one map, on lines 2 and 3"),
+        "{}",
+        stderr(&twice.run(&["a"]))
+    );
+    let alias = Project::yaml("vars:\n  A: &x hello\n  B: *x\ntasks:\n  a: echo\n");
+    assert!(stderr(&alias.run(&["a"])).contains("line 3 column 6: the alias *x"));
+    let broken = Project::yaml("tasks: [\n");
+    let output = broken.run(&[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("Outil.yml: line"),
+        "{}",
+        stderr(&output)
     );
 }

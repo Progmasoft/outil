@@ -11,6 +11,7 @@ pub mod options;
 pub mod run;
 pub mod template;
 pub mod value;
+pub mod yaml;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -28,8 +29,7 @@ pub const YAML_FILE: &str = "Outil.yml";
 ///
 /// # Errors
 ///
-/// No file, both files in one directory, or only `Outil.yml`, which this
-/// version does not read yet.
+/// No file, or both files in one directory.
 pub fn find_file(start: &Path) -> Result<PathBuf, String> {
     for dir in start.ancestors() {
         let json5 = dir.join(JSON5_FILE);
@@ -42,18 +42,12 @@ pub fn find_file(start: &Path) -> Result<PathBuf, String> {
                 ));
             }
             (true, false) => return Ok(json5),
-            (false, true) => {
-                return Err(format!(
-                    "{}: Outil {} reads {JSON5_FILE}; {YAML_FILE} comes next",
-                    yaml.display(),
-                    env!("CARGO_PKG_VERSION")
-                ));
-            }
+            (false, true) => return Ok(yaml),
             (false, false) => {}
         }
     }
     Err(format!(
-        "no {JSON5_FILE} in {} or above it",
+        "no {JSON5_FILE} or {YAML_FILE} in {} or above it",
         start.display()
     ))
 }
@@ -62,12 +56,18 @@ pub fn find_file(start: &Path) -> Result<PathBuf, String> {
 ///
 /// # Errors
 ///
-/// The file cannot be read, is not JSON5, or is not a valid Outil file.
+/// The file cannot be read, is not JSON5 or YAML, or is not a valid Outil
+/// file.
 pub fn load(path: &Path) -> Result<File, String> {
     let text =
         std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let value =
-        value::parse_json5(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+    let is_yaml = path.file_name().is_some_and(|name| name == YAML_FILE);
+    let value = if is_yaml {
+        yaml::parse_yaml(&text)
+    } else {
+        value::parse_json5(&text)
+    }
+    .map_err(|error| format!("{}: {error}", path.display()))?;
     model::read_file(&value).map_err(|error| format!("{}: {error}", path.display()))
 }
 
